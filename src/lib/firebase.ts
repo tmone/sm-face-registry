@@ -1,7 +1,8 @@
 
+
 import { initializeApp, getApps, getApp, FirebaseOptions } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore, enableIndexedDbPersistence, initializeFirestore, Firestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, Firestore } from "firebase/firestore"; // Removed enableIndexedDbPersistence import
 import { getStorage } from "firebase/storage";
 
 // Define required Firebase environment variable keys
@@ -37,18 +38,18 @@ if (typeof window !== 'undefined') {
     if (missingEnvVars.length > 0) {
       console.warn(
         `⚠️ Missing Firebase environment variables: ${missingEnvVars.join(', ')}. ` +
-        `Please ensure they are set in your .env file (or .env.local) and prefixed with NEXT_PUBLIC_. ` +
-        `Check the Firebase project settings and the example in .env.`
+        `Please ensure they are set in your .env.local file and prefixed with NEXT_PUBLIC_. ` +
+        `Check the Firebase project settings and the example in .env.local.`
       );
       // You might want to display a user-friendly message in the UI as well
       // For example, using a state variable and displaying an Alert component.
     }
 
     // Specifically check API key validity as it's a common error
-    if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'YOUR_API_KEY') {
+    if (!firebaseConfig.apiKey || firebaseConfig.apiKey === 'YOUR_API_KEY' || firebaseConfig.apiKey.length < 10) { // Added length check
         console.error(
-            "🚨 Firebase API Key is missing or using the placeholder value. " +
-            "Please provide a valid API key in your .env file for Firebase Authentication to work."
+            "🚨 Firebase API Key is missing, invalid, or using the placeholder value. " +
+            "Please provide a valid API key in your .env.local file for Firebase Authentication to work."
         );
         // Consider throwing an error or showing a blocking UI message here
         // if the API key is absolutely essential for the app's core functionality.
@@ -70,37 +71,45 @@ let db: Firestore;
 if (typeof window !== 'undefined') {
     try {
         // Use initializeFirestore to enable persistence settings reliably.
+        // This function should only be called once.
         db = initializeFirestore(app, {
             localCache: { kind: 'persistent' } // Recommended persistence setting
         });
         console.log("Firestore persistence initialized via initializeFirestore.");
 
-        // Alternative using enableIndexedDbPersistence (keep commented unless needed):
-        // enableIndexedDbPersistence(getFirestore(app))
-        //   .then(() => console.log("Firestore persistence enabled via enableIndexedDbPersistence."))
-        //   .catch((err) => {
-        //       // Handle specific errors for persistence failure
-        //       if (err.code === 'failed-precondition') {
-        //         console.warn("Firestore persistence failed: Multiple tabs open? Only one tab can have persistence enabled.");
-        //       } else if (err.code === 'unimplemented') {
-        //         console.warn("Firestore persistence failed: Browser does not support IndexedDB.");
-        //       } else {
-        //         console.error("Firestore persistence enabling failed:", err.code, err.message);
-        //       }
-        //       // Fallback to non-persistent Firestore if enabling fails
-        //       db = getFirestore(app);
-        //   });
-
     } catch (error: any) {
-        console.error("Error initializing Firestore with persistence:", error.message);
-        // Fallback to default Firestore instance if persistence initialization fails
-        db = getFirestore(app);
+        // Handle cases where initializeFirestore might fail (e.g., called again)
+        if (error.message.includes("Firestore has already been started")) {
+            console.warn("Firestore already initialized. Using existing instance.");
+            db = getFirestore(app); // Get the existing instance
+        } else {
+            console.error("Error initializing Firestore with persistence:", error.message);
+            // Fallback to default Firestore instance if persistence initialization fails unexpectedly
+            db = getFirestore(app);
+        }
     }
 } else {
     // For server-side rendering or environments without window object (e.g., build process)
+    // Initialize without persistence settings here
     db = getFirestore(app);
 }
+
+
+// REMOVED: Redundant call to enableIndexedDbPersistence
+// enableIndexedDbPersistence(db)
+//       .catch((err) => {
+//         if (err.code == 'failed-precondition') {
+//           // Multiple tabs open, persistence can only be enabled
+//           // in one tab at a a time.
+//           console.warn("Firestore persistence failed-precondition", err);
+//         } else if (err.code == 'unimplemented') {
+//           // The current browser does not support all of the
+//           // features required to enable persistence
+//           console.warn("Firestore persistence unimplemented", err);
+//         }
+//       });
 
 const storage = getStorage(app);
 
 export { app, auth, db, storage };
+

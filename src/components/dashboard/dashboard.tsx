@@ -60,6 +60,7 @@ export default function Dashboard() {
     setLoading(true);
     setFetchError(null); // Reset fetch error on new attempt
 
+    
     const currentOnlineStatus = typeof navigator !== 'undefined' && navigator.onLine;
     setIsOffline(!currentOnlineStatus); // Update based on current status
     console.log(`Dashboard: Attempting to fetch data for user: ${user.uid}. Online: ${currentOnlineStatus}`);
@@ -101,6 +102,7 @@ export default function Dashboard() {
         console.warn(`Dashboard: User document not found for UID: ${user.uid}.`);
         setUserData(null); // User doc doesn't exist
         setFetchError(t('user_data_not_found'));
+        // Show toast if the user document is not found.
         toast({ variant: "destructive", title: t('error'), description: t('user_data_not_found_contact_admin') });
       }
     } catch (error: any) {
@@ -118,51 +120,57 @@ export default function Dashboard() {
       let uiError = t('failed_to_fetch_user_data_generic'); // Default UI error
       let isCurrentlyOfflineError = false;
 
-      // Check for common errors like offline or permission denied
-      if (typedError.code === 'unavailable') {
-        console.warn(`Dashboard: Firestore operation failed with 'unavailable' code (UID: ${user.uid}).`);
-        isCurrentlyOfflineError = true;
-        description = t('offline_message');
-        uiError = t('offline_message'); // Set specific UI error for offline
+     // Check for common errors like offline or permission denied
+     if (typedError.code === 'unavailable') {
+          console.warn(`Dashboard: Firestore operation failed with 'unavailable' code (UID: ${user.uid}).`);
+          isCurrentlyOfflineError = true;
+          description = t('offline_message');
+          uiError = t('offline_message'); // Set specific UI error for offline
 
-         // Check if browser *thinks* it's online despite the 'unavailable' error
-         if (currentOnlineStatus) {
-            console.warn("Dashboard: Firestore reported 'unavailable' but browser navigator.onLine is true. This might indicate a Firestore persistence issue (e.g., multiple tabs open) or a transient network problem.");
-            uiError = t('firestore_unavailable_check_tabs'); // More specific UI error message
-            description = t('firestore_unavailable_check_tabs_desc'); // More specific description
-         }
+          // Check if browser *thinks* it's online despite the 'unavailable' error
+          if (currentOnlineStatus) {
+              console.warn("Dashboard: Firestore reported 'unavailable' but browser navigator.onLine is true. This might indicate a Firestore persistence issue (e.g., multiple tabs open) or a transient network problem.");
+              uiError = t('firestore_unavailable_check_tabs'); // More specific UI error message
+              description = t('firestore_unavailable_check_tabs_desc'); // More specific description
+          }
 
-        // Don't toast excessively if already known to be offline (based on navigator)
-        if (!isOffline && !currentOnlineStatus) { // Only toast if we *thought* we were online but now confirm offline
-             toast({ variant: "warning", title: t('offline_title'), description: description });
-        } else if (currentOnlineStatus) { // Toast if browser thinks it's online but Firestore failed
-             toast({ variant: "warning", title: t('connection_issue_title'), description: description });
-        }
-
-      } else if (typedError.code === 'permission-denied') {
-        console.error("Dashboard: Firestore Permission Denied. Check Firestore security rules.");
-        description = t('permission_denied_error');
-        uiError = t('permission_denied_error_check_rules'); // More specific UI message
-        toast({ variant: "destructive", title: t('error'), description });
-      } else if (typedError.code === 'invalid-argument') { // Use Firestore error code directly
-         console.error("Dashboard: Firestore Invalid Argument. Possibly related to query or data structure.");
-         description = t('firestore_invalid_argument');
-         uiError = t('firestore_error_contact_admin');
-         toast({ variant: "destructive", title: t('error'), description });
-      }
-      else {
-        // Generic error toast for unexpected issues
-        console.error("Dashboard: Unexpected error fetching user data:", typedError);
-        toast({ variant: "destructive", title: t('error'), description });
-      }
+          // Only show a toast if the status changes (from online to unavailable or vice versa)
+          if (currentOnlineStatus && !isOffline) { // Browser thinks it's online but Firestore reports unavailable
+              toast({ variant: "warning", title: t('connection_issue_title'), description: description });
+          } else if (!currentOnlineStatus && !isOffline) { // Browser thinks it's offline and it matches Firestore
+               toast({ variant: "warning", title: t('offline_title'), description: description });
+          }
+     } else if (typedError.code === 'permission-denied') {
+          console.error("Dashboard: Firestore Permission Denied. Check Firestore security rules.");
+          description = t('permission_denied_error');
+          uiError = t('permission_denied_error_check_rules'); // More specific UI message
+          toast({ variant: "destructive", title: t('error'), description });
+     } else if (typedError.code === 'invalid-argument') { // Use Firestore error code directly
+          console.error("Dashboard: Firestore Invalid Argument. Possibly related to query or data structure.");
+          description = t('firestore_invalid_argument');
+          uiError = t('firestore_error_contact_admin');
+          toast({ variant: "destructive", title: t('error'), description });
+     } else if (typedError.code === 'unauthenticated') {
+          // If the user is not authenticated we log it and show a toast.
+          console.error("Dashboard: Firestore Unauthenticated. The user is not authenticated.");
+          description = t('unauthenticated_error');
+          uiError = t('unauthenticated_error_description');
+          toast({ variant: "destructive", title: t('error'), description });
+     }
+     else {
+          // Generic error toast for unexpected issues
+          console.error("Dashboard: Unexpected error fetching user data:", typedError);
+          // Show a toast for any other error.
+          toast({ variant: "destructive", title: t('error'), description });
+     }
 
       // Update state based on the error
       setIsOffline(isCurrentlyOfflineError || !navigator.onLine); // Ensure offline state reflects error or navigator status
       setFetchError(uiError); // Set specific error message for UI
 
-      // **Important**: Only clear userData if the error is *not* just being offline ('unavailable').
+      // **Important**: Only clear userData if the error is *not* just being offline ('unavailable') or unauthenticated.
       // If offline, we want to keep potentially cached data displayed.
-      if (!isCurrentlyOfflineError) {
+      if (!isCurrentlyOfflineError && typedError.code !== 'unauthenticated') {
          setUserData(null);
          console.log("Dashboard: Cleared user data due to non-offline error.");
       } else {
