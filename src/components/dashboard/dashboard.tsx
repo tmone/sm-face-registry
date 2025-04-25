@@ -92,6 +92,9 @@ export default function Dashboard() {
         // If we are offline, trust the navigator.onLine status primarily
         if (currentOnlineStatus) {
             setIsOffline(userDocSnap.metadata.fromCache);
+             if (userDocSnap.metadata.fromCache) {
+                 console.log(`Dashboard: Data fetched from cache for user ${user.uid}.`);
+             }
         }
         console.log(`Dashboard: User data fetched successfully for ${user.uid}. From Cache: ${userDocSnap.metadata.fromCache}`);
       } else {
@@ -117,14 +120,25 @@ export default function Dashboard() {
 
       // Check for common errors like offline or permission denied
       if (typedError.code === 'unavailable') {
-        console.warn(`Dashboard: Firestore operation failed: Client reported as offline during fetch (UID: ${user.uid}).`);
+        console.warn(`Dashboard: Firestore operation failed with 'unavailable' code (UID: ${user.uid}).`);
         isCurrentlyOfflineError = true;
         description = t('offline_message');
         uiError = t('offline_message'); // Set specific UI error for offline
+
+         // Check if browser *thinks* it's online despite the 'unavailable' error
+         if (currentOnlineStatus) {
+            console.warn("Dashboard: Firestore reported 'unavailable' but browser navigator.onLine is true. This might indicate a Firestore persistence issue (e.g., multiple tabs open) or a transient network problem.");
+            uiError = t('firestore_unavailable_check_tabs'); // More specific UI error message
+            description = t('firestore_unavailable_check_tabs_desc'); // More specific description
+         }
+
         // Don't toast excessively if already known to be offline (based on navigator)
-        if (!isOffline) { // Only toast if we *thought* we were online
+        if (!isOffline && !currentOnlineStatus) { // Only toast if we *thought* we were online but now confirm offline
              toast({ variant: "warning", title: t('offline_title'), description: description });
+        } else if (currentOnlineStatus) { // Toast if browser thinks it's online but Firestore failed
+             toast({ variant: "warning", title: t('connection_issue_title'), description: description });
         }
+
       } else if (typedError.code === 'permission-denied') {
         console.error("Dashboard: Firestore Permission Denied. Check Firestore security rules.");
         description = t('permission_denied_error');
@@ -168,7 +182,20 @@ export default function Dashboard() {
 
   useEffect(() => {
     console.log("Dashboard: Mount/User change effect running.");
-    fetchUserData(); // Fetch data when component mounts or user changes
+    // Initial fetch attempt, but don't show loading immediately if persistence might work offline
+    if (user && !userData) {
+        console.log("Dashboard: Initial fetch triggered on mount/user change.");
+        fetchUserData();
+    } else if (!user) {
+        console.log("Dashboard: No user on mount, skipping initial fetch.");
+        setLoading(false); // Ensure loading is false if no user
+        setUserData(null);
+        setFetchError(null);
+    } else {
+        console.log("Dashboard: User data already exists on mount/user change, skipping initial fetch.");
+        setLoading(false); // Already have data (likely from cache or previous state)
+    }
+
 
     // Add network status listeners (only on client)
     const setupNetworkListeners = () => {
@@ -176,9 +203,9 @@ export default function Dashboard() {
           console.log("Dashboard: Network status changed: Online");
           setIsOffline(false);
           // Clear only the offline error message, keep other potential errors
-          if (fetchError === t('offline_message')) {
+          if (fetchError === t('offline_message') || fetchError === t('firestore_unavailable_check_tabs')) {
             setFetchError(null);
-            console.log("Dashboard: Cleared offline error message.");
+            console.log("Dashboard: Cleared offline/unavailable error message.");
           }
           // Refetch data only if it wasn't loaded previously or if there was *any* fetch error
           if (!userData || fetchError) {
@@ -306,9 +333,11 @@ export default function Dashboard() {
   // 2. Error State (and no cached data available)
   // Show error primarily if userData is *still* null after loading attempt.
   if (fetchError && !userData) {
-     const Icon = fetchError === t('offline_message') ? WifiOff : ShieldAlert;
-     const title = fetchError === t('offline_message') ? t('offline_title') : t('error_loading_data');
-     const descriptionColor = fetchError === t('offline_message') ? 'text-muted-foreground' : 'text-destructive';
+     const isOfflineOrUnavailable = fetchError === t('offline_message') || fetchError === t('firestore_unavailable_check_tabs');
+     const Icon = isOfflineOrUnavailable ? WifiOff : ShieldAlert;
+     const title = isOfflineOrUnavailable ? t('connection_issue_title') : t('error_loading_data');
+     const descriptionColor = isOfflineOrUnavailable ? 'text-muted-foreground' : 'text-destructive';
+
     return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] text-center p-4">
             <Icon className={`h-16 w-16 mb-4 ${descriptionColor}`} />
@@ -316,6 +345,7 @@ export default function Dashboard() {
             <p className={`${descriptionColor}`}>{fetchError}</p>
             {/* Specific guidance based on error */}
             {fetchError === t('offline_message') && <p className="text-sm text-muted-foreground mt-2">{t('check_connection_try_again')}</p>}
+             {fetchError === t('firestore_unavailable_check_tabs') && <p className="text-sm text-muted-foreground mt-2">{t('close_other_tabs_try_again')}</p>}
             {fetchError === t('permission_denied_error_check_rules') && <p className="text-sm text-muted-foreground mt-2">{t('check_firestore_rules')}</p>}
             {fetchError === t('user_data_not_found_contact_admin') && <p className="text-sm text-muted-foreground mt-2">{t('contact_support_if_issue_persists')}</p>}
              {fetchError === t('firestore_error_contact_admin') && <p className="text-sm text-muted-foreground mt-2">{t('contact_support_if_issue_persists')}</p>}
@@ -336,8 +366,17 @@ export default function Dashboard() {
             <WifiOff className="h-4 w-4" /> {t('offline_data_stale')}
          </div>
        )}
-        {/* Show non-offline errors even with cached data */}
-       {fetchError && fetchError !== t('offline_message') && (
+        {/* Show specific 'unavailable' error even with cached data */}
+       {fetchError && fetchError === t('firestore_unavailable_check_tabs') && (
+           <div className="mb-4 p-2 text-center text-sm bg-yellow-100 text-yellow-800 rounded border border-yellow-200 flex items-center justify-center gap-2">
+               <AlertCircle className="h-4 w-4" /> {fetchError}
+               <Button onClick={fetchUserData} size="sm" variant="ghost" className="ml-2 h-6 px-2 text-yellow-800 hover:bg-yellow-200" disabled={loading}>
+                  {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : t('retry')}
+               </Button>
+           </div>
+       )}
+       {/* Show other non-offline/unavailable errors even with cached data */}
+       {fetchError && ![t('offline_message'), t('firestore_unavailable_check_tabs')].includes(fetchError) && (
            <div className="mb-4 p-2 text-center text-sm bg-red-100 text-red-800 rounded border border-red-200 flex items-center justify-center gap-2">
                <AlertCircle className="h-4 w-4" /> {fetchError}
                <Button onClick={fetchUserData} size="sm" variant="ghost" className="ml-2 h-6 px-2 text-red-800 hover:bg-red-200" disabled={loading}>
@@ -345,6 +384,7 @@ export default function Dashboard() {
                </Button>
            </div>
        )}
+
 
         <h1 className="mb-6 text-3xl font-bold text-center">{t('dashboard')}</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -417,7 +457,7 @@ export default function Dashboard() {
                      {!capturedImage && (
                          <Button
                             onClick={() => setShowWebcam(true)}
-                            disabled={processing || showWebcam || livenessCheckRequired || isOffline}
+                            disabled={processing || showWebcam || livenessCheckRequired || isOffline || !!fetchError} // Also disable if there's a fetch error
                             size="lg"
                          >
                             {userData.faceRegistered ? t('update_face') : t('register_face')}
@@ -442,3 +482,4 @@ export default function Dashboard() {
       </div>
   );
 }
+

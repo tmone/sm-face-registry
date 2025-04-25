@@ -120,8 +120,11 @@
     "offline_data_stale": "You are offline. Displaying cached data, which might be outdated.",
     "this_may_take_a_moment": "This may take a moment...",
     "register_face_instruction": "Click the button above to start the face registration process.",
-    "update_face_instruction": "Click the button above to update your registered face image."
-
+    "update_face_instruction": "Click the button above to update your registered face image.",
+    "connection_issue_title": "Connection Issue",
+    "firestore_unavailable_check_tabs": "Could not connect to the database. This can happen if you have the app open in multiple tabs. Please close other tabs and try again.",
+    "firestore_unavailable_check_tabs_desc": "Could not connect to the database. Please close other tabs or check your connection.",
+    "close_other_tabs_try_again": "Please close other tabs of this app and try again."
   },
   "vi": {
     "loading": "Đang tải",
@@ -243,7 +246,11 @@
     "offline_data_stale": "Bạn đang ngoại tuyến. Hiển thị dữ liệu đã lưu trong bộ nhớ cache, dữ liệu này có thể đã cũ.",
     "this_may_take_a_moment": "Quá trình này có thể mất một chút thời gian...",
     "register_face_instruction": "Nhấp vào nút ở trên để bắt đầu quá trình đăng ký khuôn mặt.",
-    "update_face_instruction": "Nhấp vào nút ở trên để cập nhật hình ảnh khuôn mặt đã đăng ký của bạn."
+    "update_face_instruction": "Nhấp vào nút ở trên để cập nhật hình ảnh khuôn mặt đã đăng ký của bạn.",
+    "connection_issue_title": "Sự cố kết nối",
+    "firestore_unavailable_check_tabs": "Không thể kết nối với cơ sở dữ liệu. Điều này có thể xảy ra nếu bạn mở ứng dụng trong nhiều tab. Vui lòng đóng các tab khác và thử lại.",
+    "firestore_unavailable_check_tabs_desc": "Không thể kết nối với cơ sở dữ liệu. Vui lòng đóng các tab khác hoặc kiểm tra kết nối của bạn.",
+    "close_other_tabs_try_again": "Vui lòng đóng các tab khác của ứng dụng này và thử lại."
   }
 }
 
