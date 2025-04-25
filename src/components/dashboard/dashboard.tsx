@@ -55,24 +55,21 @@ export default function Dashboard() {
              toast({ variant: "destructive", title: t('error'), description: t('user_data_not_found') });
           }
         } catch (error: any) {
-          // Log detailed error including code and message
-          console.error(`Error fetching user data for UID: ${user.uid}:`, error);
-          console.error(`Error Code: ${error.code}, Message: ${error.message}`);
-          let description = t('failed_to_fetch_user_data');
-          let isCurrentlyOffline = false; // Local variable for this catch block
-
-           // Check for common errors like offline or permission denied
+           // Check for offline error first
            if (error.code === 'unavailable') {
-                description = t('client_offline_error'); // Specific offline message
-                setIsOffline(true); // Set offline state
-                isCurrentlyOffline = true;
-           } else if (error.code === 'permission-denied') {
-               description = t('permission_denied_error'); // Specific permission message
+               // Use warn for expected offline state, don't show toast as UI handles it
+               console.warn(`Firestore operation failed: Client is offline (UID: ${user?.uid}). Displaying offline UI.`);
+               setIsOffline(true); // Set offline state
+           } else {
+               // Log other unexpected errors and show a toast
+               console.error(`Error fetching user data for UID: ${user?.uid}:`, error);
+               console.error(`Error Code: ${error.code}, Message: ${error.message}`);
+               let description = t('failed_to_fetch_user_data');
+                if (error.code === 'permission-denied') {
+                    description = t('permission_denied_error'); // Specific permission message
+                }
+               toast({ variant: "destructive", title: t('error'), description });
            }
-          // Only show toast for non-offline errors, as offline state has its own UI
-          if (!isCurrentlyOffline) {
-              toast({ variant: "destructive", title: t('error'), description });
-          }
         } finally {
           setLoading(false);
         }
@@ -86,7 +83,33 @@ export default function Dashboard() {
     };
 
     fetchUserData();
-  }, [user, toast, t]); // Rerun effect when user, toast, or t changes
+    // Add network status listeners to potentially trigger refetch on reconnect
+    const handleOnline = () => {
+        console.log("Network status: Online");
+        setIsOffline(false);
+        // Optionally trigger a refetch if needed, e.g., if userData is null
+        if (!userData) {
+             fetchUserData();
+        }
+    };
+    const handleOffline = () => {
+         console.log("Network status: Offline");
+         setIsOffline(true);
+         // Show toast only when transitioning to offline, fetchUserData handles initial load offline state
+         toast({ variant: "destructive", title: t('offline_title'), description: t('offline_message') });
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // Cleanup listeners on component unmount
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+
+  }, [user, toast, t, userData]); // Rerun effect when user, toast, t or userData changes
+
 
   const handleImageCapture = (imageSrc: string) => {
     setCapturedImage(imageSrc);
@@ -161,13 +184,14 @@ export default function Dashboard() {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">{t('loading_user_data')}...</span></div>;
   }
 
-  // Display offline message if detected
-  if (isOffline) {
+  // Display offline message if detected (priority over !userData check)
+  if (isOffline && !userData) { // Show specific offline message if offline AND no data loaded
     return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] text-center p-4">
             <WifiOff className="h-16 w-16 text-muted-foreground mb-4" />
             <h2 className="text-xl font-semibold mb-2">{t('offline_title')}</h2>
             <p className="text-muted-foreground">{t('offline_message')}</p>
+             <p className="text-sm text-muted-foreground mt-2">{t('failed_to_load_user_data')}</p>
         </div>
     );
   }
@@ -181,6 +205,12 @@ export default function Dashboard() {
   // Only render the dashboard content if userData is available
   return userData ? (
     <div className="container mx-auto p-4 md:p-8">
+       {/* Optional: Show a subtle offline indicator when offline but data is available */}
+       {isOffline && userData && (
+         <div className="mb-4 p-2 text-center text-sm bg-orange-100 text-orange-800 rounded border border-orange-200 flex items-center justify-center gap-2">
+            <WifiOff className="h-4 w-4" /> {t('offline_message')}
+         </div>
+       )}
         <h1 className="mb-6 text-3xl font-bold text-center">{t('dashboard')}</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* User Information Card */}
@@ -247,7 +277,7 @@ export default function Dashboard() {
                   )}
                  {/* Show button only if not capturing, not doing liveness, and not processing */}
                  {!capturedImage && !livenessCheckRequired && (
-                     <Button onClick={() => setShowWebcam(true)} disabled={processing || showWebcam || livenessCheckRequired}>
+                     <Button onClick={() => setShowWebcam(true)} disabled={processing || showWebcam || livenessCheckRequired || isOffline}>
                         {userData.faceRegistered ? t('update_face') : t('register_face')}
                      </Button>
                  )}
