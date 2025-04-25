@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { db, storage } from '@/lib/firebase';
@@ -12,7 +12,7 @@ import WebcamCapture from './webcam-capture';
 import LivenessCheck from './liveness-check';
 import { extractFacialFeatures } from '@/ai/flows/extract-facial-features';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Mail, Building, CheckCircle, AlertCircle, WifiOff } from 'lucide-react'; // Added WifiOff
+import { Loader2, User, Mail, Building, CheckCircle, AlertCircle, WifiOff, ShieldAlert } from 'lucide-react'; // Added WifiOff, ShieldAlert
 import { useTranslation } from '@/hooks/use-translation';
 
 
@@ -33,69 +33,103 @@ export default function Dashboard() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [livenessCheckRequired, setLivenessCheckRequired] = useState(false);
-  const [isOffline, setIsOffline] = useState(false); // State to track offline status
+  const [isOffline, setIsOffline] = useState(!navigator.onLine); // Initialize based on browser status
+  const [fetchError, setFetchError] = useState<string | null>(null); // State to store specific fetch error message
   const { toast } = useToast();
   const { t } = useTranslation();
 
-  useEffect(() => {
-    const fetchUserData = async () => {
-      if (user) {
-        setLoading(true);
-        setIsOffline(false); // Reset offline status on new fetch attempt
-        try {
-          console.log(`Fetching data for user: ${user.uid}`);
-          const userDocRef = doc(db, 'users', user.uid);
-          const userDocSnap = await getDoc(userDocRef);
-          console.log(`Firestore document snapshot exists: ${userDocSnap.exists()}`);
-          if (userDocSnap.exists()) {
-            setUserData(userDocSnap.data() as UserData);
-            console.log("User data fetched successfully:", userDocSnap.data());
-          } else {
-             console.warn(`User document not found for UID: ${user.uid}`);
-             toast({ variant: "destructive", title: t('error'), description: t('user_data_not_found') });
-          }
-        } catch (error: any) {
-           // Check for offline error first
-           if (error.code === 'unavailable') {
-               // Use warn for expected offline state, don't show toast as UI handles it
-               console.warn(`Firestore operation failed: Client is offline (UID: ${user?.uid}). Displaying offline UI.`);
-               setIsOffline(true); // Set offline state
-           } else {
-               // Log other unexpected errors and show a toast
-               console.error(`Error fetching user data for UID: ${user?.uid}:`, error);
-               console.error(`Error Code: ${error.code}, Message: ${error.message}`);
-               let description = t('failed_to_fetch_user_data');
-                if (error.code === 'permission-denied') {
-                    description = t('permission_denied_error'); // Specific permission message
-                }
-               toast({ variant: "destructive", title: t('error'), description });
-           }
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // Handle case where user is null (e.g., logged out)
-        setLoading(false);
-        setUserData(null);
-        setIsOffline(false); // Reset offline state if user logs out
-        console.log("User is null, skipping data fetch.");
-      }
-    };
+  const fetchUserData = useCallback(async () => {
+    if (user) {
+      setLoading(true);
+      setFetchError(null); // Reset fetch error on new attempt
+      // Update offline status based on current navigator state before fetching
+      const currentlyOffline = !navigator.onLine;
+      setIsOffline(currentlyOffline);
 
-    fetchUserData();
-    // Add network status listeners to potentially trigger refetch on reconnect
+      console.log(`Attempting to fetch data for user: ${user.uid}. Online status: ${!currentlyOffline}`);
+
+      if (currentlyOffline) {
+           console.warn(`Client is offline (UID: ${user.uid}). Skipping Firestore fetch.`);
+           setFetchError(t('offline_message')); // Set specific error message for UI
+           setLoading(false);
+           // Keep existing userData if available, otherwise it remains null
+           return;
+      }
+
+
+      try {
+        const userDocRef = doc(db, 'users', user.uid);
+        console.log(`Fetching Firestore document: users/${user.uid}`);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (userDocSnap.exists()) {
+          const fetchedData = userDocSnap.data() as UserData;
+          setUserData(fetchedData);
+          console.log("User data fetched successfully:", fetchedData);
+          setFetchError(null); // Clear error on success
+        } else {
+           console.warn(`User document not found for UID: ${user.uid}. User might be logged in, but Firestore data is missing.`);
+           setUserData(null); // Ensure userData is null if doc doesn't exist
+           setFetchError(t('user_data_not_found'));
+           toast({ variant: "destructive", title: t('error'), description: t('user_data_not_found') });
+        }
+      } catch (error: any) {
+         console.error(`Error fetching user data for UID: ${user?.uid}:`, error);
+         // Log the specific error code and message
+         console.error(`Firestore Error Code: ${error.code}, Message: ${error.message}`);
+
+         let description = t('failed_to_fetch_user_data');
+         let uiError = t('failed_to_fetch_user_data'); // Separate message for UI state
+
+         if (error.code === 'unavailable') {
+             console.warn(`Firestore operation failed: Client reported as offline during fetch (UID: ${user?.uid}).`);
+             setIsOffline(true); // Set offline state
+             description = t('offline_message');
+             uiError = t('offline_message');
+             // Avoid toast here as the UI will show the offline state
+         } else if (error.code === 'permission-denied') {
+             console.error("Firestore Permission Denied. Check Firestore security rules.");
+             description = t('permission_denied_error');
+             uiError = t('permission_denied_error_check_rules'); // More specific UI message
+             toast({ variant: "destructive", title: t('error'), description });
+         } else {
+              // Generic error toast for unexpected issues
+             toast({ variant: "destructive", title: t('error'), description });
+         }
+         setUserData(null); // Clear data on error
+         setFetchError(uiError); // Set specific error message for UI
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      // Handle case where user is null (e.g., logged out, or auth state not yet ready)
+      console.log("User is null or auth state not ready, skipping data fetch.");
+      setLoading(false); // Ensure loading stops if user is null initially
+      setUserData(null);
+      setFetchError(null); // Clear any previous errors
+      setIsOffline(!navigator.onLine); // Update offline status based on browser
+    }
+  }, [user, toast, t]); // Removed userData from dependencies to avoid refetch loops on data update
+
+  useEffect(() => {
+    fetchUserData(); // Fetch data when component mounts or user changes
+
+    // Add network status listeners
     const handleOnline = () => {
-        console.log("Network status: Online");
+        console.log("Network status changed: Online");
         setIsOffline(false);
-        // Optionally trigger a refetch if needed, e.g., if userData is null
-        if (!userData) {
+        setFetchError(null); // Clear potential offline error message
+        // Refetch data only if it wasn't loaded previously or if there was a fetch error
+        if (!userData || fetchError) {
+             console.log("Network back online, refetching user data...");
              fetchUserData();
         }
     };
     const handleOffline = () => {
-         console.log("Network status: Offline");
+         console.log("Network status changed: Offline");
          setIsOffline(true);
-         // Show toast only when transitioning to offline, fetchUserData handles initial load offline state
+         setFetchError(t('offline_message')); // Set offline message for UI
+         // Show toast only when transitioning to offline state
          toast({ variant: "destructive", title: t('offline_title'), description: t('offline_message') });
     };
 
@@ -107,8 +141,8 @@ export default function Dashboard() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-
-  }, [user, toast, t, userData]); // Rerun effect when user, toast, t or userData changes
+    // Run effect when fetchUserData (which depends on user, t, toast) changes
+  }, [fetchUserData, userData, fetchError, t, toast]);
 
 
   const handleImageCapture = (imageSrc: string) => {
@@ -160,9 +194,12 @@ export default function Dashboard() {
          let errorMessage = t('failed_to_register_face');
          if (error.message === t('failed_to_extract_features')) {
              errorMessage = t('could_not_detect_face');
+         } else if (error.code === 'storage/unauthorized' || error.code === 'permission-denied') {
+             errorMessage = t('storage_permission_error'); // Specific message for storage/firestore permissions
+             console.error("Permission error during face registration. Check Storage/Firestore rules.");
          } else if (error.code) {
-            // Include Firebase error code if available
-            errorMessage += ` (Error: ${error.code})`;
+            // Include Firebase/other error code if available
+            errorMessage += ` (${t('error_code')}: ${error.code})`;
          }
         toast({ variant: "destructive", title: t('error'), description: errorMessage });
         // Reset states if registration fails
@@ -184,31 +221,32 @@ export default function Dashboard() {
     return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">{t('loading_user_data')}...</span></div>;
   }
 
-  // Display offline message if detected (priority over !userData check)
-  if (isOffline && !userData) { // Show specific offline message if offline AND no data loaded
+  // Display specific error message if fetching failed
+  if (fetchError && !userData) { // Show error only if there's no user data loaded
+     const Icon = fetchError === t('offline_message') ? WifiOff : ShieldAlert;
+     const title = fetchError === t('offline_message') ? t('offline_title') : t('error_loading_data');
     return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] text-center p-4">
-            <WifiOff className="h-16 w-16 text-muted-foreground mb-4" />
-            <h2 className="text-xl font-semibold mb-2">{t('offline_title')}</h2>
-            <p className="text-muted-foreground">{t('offline_message')}</p>
-             <p className="text-sm text-muted-foreground mt-2">{t('failed_to_load_user_data')}</p>
+            <Icon className={`h-16 w-16 mb-4 ${fetchError === t('offline_message') ? 'text-muted-foreground' : 'text-destructive'}`} />
+            <h2 className="text-xl font-semibold mb-2">{title}</h2>
+            <p className={`${fetchError === t('offline_message') ? 'text-muted-foreground' : 'text-destructive'}`}>{fetchError}</p>
+            {/* Suggest retry or checking connection/rules based on error */}
+            {fetchError === t('offline_message') && <p className="text-sm text-muted-foreground mt-2">{t('check_connection_try_again')}</p>}
+            {fetchError === t('permission_denied_error_check_rules') && <p className="text-sm text-muted-foreground mt-2">{t('check_firestore_rules')}</p>}
+            {fetchError === t('user_data_not_found') && <p className="text-sm text-muted-foreground mt-2">{t('contact_support_if_issue_persists')}</p>}
+             {/* Optionally add a manual retry button */}
+             <Button onClick={fetchUserData} className="mt-4" variant="outline">{t('retry')}</Button>
         </div>
     );
   }
 
-
-  if (!userData && !loading) { // Ensure loading is finished before showing error
-     // This might happen if the user doc doesn't exist or fetch failed without being offline
-    return <div className="flex h-screen items-center justify-center text-destructive p-4 text-center">{t('failed_to_load_user_data')} Check console for errors or ensure user document exists in Firestore.</div>;
-  }
-
-  // Only render the dashboard content if userData is available
+  // Render dashboard only if userData is available
   return userData ? (
     <div className="container mx-auto p-4 md:p-8">
-       {/* Optional: Show a subtle offline indicator when offline but data is available */}
-       {isOffline && userData && (
+       {/* Show a subtle offline indicator when offline but data is available */}
+       {isOffline && (
          <div className="mb-4 p-2 text-center text-sm bg-orange-100 text-orange-800 rounded border border-orange-200 flex items-center justify-center gap-2">
-            <WifiOff className="h-4 w-4" /> {t('offline_message')}
+            <WifiOff className="h-4 w-4" /> {t('offline_data_stale')}
          </div>
        )}
         <h1 className="mb-6 text-3xl font-bold text-center">{t('dashboard')}</h1>
@@ -288,5 +326,5 @@ export default function Dashboard() {
           </Card>
         </div>
     </div>
-  ) : null; // Return null if userData is null and not loading
+  ) : null; // Return null if userData is null and not loading (and no fetch error)
 }
