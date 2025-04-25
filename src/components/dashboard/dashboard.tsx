@@ -12,7 +12,7 @@ import WebcamCapture from './webcam-capture';
 import LivenessCheck from './liveness-check';
 import { extractFacialFeatures } from '@/ai/flows/extract-facial-features';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, User, Mail, Building, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, User, Mail, Building, CheckCircle, AlertCircle, WifiOff } from 'lucide-react'; // Added WifiOff
 import { useTranslation } from '@/hooks/use-translation';
 
 
@@ -33,6 +33,7 @@ export default function Dashboard() {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [livenessCheckRequired, setLivenessCheckRequired] = useState(false);
+  const [isOffline, setIsOffline] = useState(false); // State to track offline status
   const { toast } = useToast();
   const { t } = useTranslation();
 
@@ -40,6 +41,7 @@ export default function Dashboard() {
     const fetchUserData = async () => {
       if (user) {
         setLoading(true);
+        setIsOffline(false); // Reset offline status on new fetch attempt
         try {
           console.log(`Fetching data for user: ${user.uid}`);
           const userDocRef = doc(db, 'users', user.uid);
@@ -59,9 +61,10 @@ export default function Dashboard() {
           let description = t('failed_to_fetch_user_data');
            // Check for common errors like offline or permission denied
            if (error.code === 'unavailable') {
-                description = 'Failed to fetch data: Client is offline or Firestore is unavailable.';
+                description = t('client_offline_error'); // Specific offline message
+                setIsOffline(true); // Set offline state
            } else if (error.code === 'permission-denied') {
-               description = 'Failed to fetch data: Permission denied. Check Firestore rules.';
+               description = t('permission_denied_error'); // Specific permission message
            }
           toast({ variant: "destructive", title: t('error'), description });
         } finally {
@@ -71,6 +74,7 @@ export default function Dashboard() {
         // Handle case where user is null (e.g., logged out)
         setLoading(false);
         setUserData(null);
+        setIsOffline(false); // Reset offline state if user logs out
         console.log("User is null, skipping data fetch.");
       }
     };
@@ -91,7 +95,7 @@ export default function Dashboard() {
      setLivenessCheckRequired(false);
      try {
         // 1. Extract facial features using Genkit Flow
-        toast({ title: "Processing", description: "Extracting facial features..." });
+        toast({ title: t('processing'), description: t('extracting_facial_features') });
         const { facialFeatures } = await extractFacialFeatures({ photoDataUri: capturedImage });
 
         if (!facialFeatures || facialFeatures.length === 0) {
@@ -100,14 +104,14 @@ export default function Dashboard() {
         console.log("Facial features extracted:", facialFeatures.length);
 
         // 2. Upload image to Firebase Storage
-        toast({ title: "Processing", description: "Uploading image..." });
+        toast({ title: t('processing'), description: t('uploading_image') });
         const imageRef = ref(storage, `faceImages/${user.uid}.jpg`);
         await uploadString(imageRef, capturedImage.split(',')[1], 'base64', { contentType: 'image/jpeg' });
         const imageUrl = await getDownloadURL(imageRef);
         console.log("Image uploaded:", imageUrl);
 
         // 3. Update Firestore document
-        toast({ title: "Processing", description: "Saving registration data..." });
+        toast({ title: t('processing'), description: t('saving_registration_data') });
         const userDocRef = doc(db, 'users', user.uid);
         await updateDoc(userDocRef, {
             faceRegistered: true,
@@ -148,11 +152,23 @@ export default function Dashboard() {
 
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">Loading user data...</span></div>;
+    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">{t('loading_user_data')}...</span></div>;
   }
 
+  // Display offline message if detected
+  if (isOffline) {
+    return (
+        <div className="flex flex-col items-center justify-center h-[calc(100vh-10rem)] text-center p-4">
+            <WifiOff className="h-16 w-16 text-muted-foreground mb-4" />
+            <h2 className="text-xl font-semibold mb-2">{t('offline_title')}</h2>
+            <p className="text-muted-foreground">{t('offline_message')}</p>
+        </div>
+    );
+  }
+
+
   if (!userData && !loading) { // Ensure loading is finished before showing error
-     // This might happen if the user doc doesn't exist or fetch failed
+     // This might happen if the user doc doesn't exist or fetch failed without being offline
     return <div className="flex h-screen items-center justify-center text-destructive p-4 text-center">{t('failed_to_load_user_data')} Check console for errors or ensure user document exists in Firestore.</div>;
   }
 

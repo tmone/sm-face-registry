@@ -44,6 +44,8 @@
     "user_data_not_found": "User data not found.",
     "failed_to_fetch_user_data": "Failed to fetch user data.",
     "failed_to_load_user_data": "Failed to load user data.",
+    "client_offline_error": "Failed to fetch data: Client is offline or Firestore is unavailable.",
+    "permission_denied_error": "Failed to fetch data: Permission denied. Check Firestore rules.",
     "failed_to_extract_features": "Failed to extract facial features from the image.",
     "failed_to_register_face": "Failed to register face. Please try again.",
     "could_not_detect_face": "Could not detect a face or extract features. Please try again with a clearer image.",
@@ -67,6 +69,9 @@
     "camera_stream_not_available": "Camera stream is not available.",
     "no_video_data_recorded": "No video data was recorded.",
     "processing": "Processing",
+    "extracting_facial_features": "Extracting facial features...",
+    "uploading_image": "Uploading image...",
+    "saving_registration_data": "Saving registration data...",
     "analyzing_video_for_liveness": "Analyzing video for liveness...",
     "liveness_check_successful": "Liveness check successful!",
     "failed": "Failed",
@@ -92,7 +97,10 @@
     "logged_out": "Logged Out",
     "logged_out_successfully": "You have been logged out successfully.",
     "logout_failed": "Logout Failed",
-    "failed_to_log_out": "Failed to log out. Please try again."
+    "failed_to_log_out": "Failed to log out. Please try again.",
+    "loading_user_data": "Loading user data",
+    "offline_title": "You are Offline",
+    "offline_message": "Please check your internet connection and try again. Some features may be unavailable."
   },
   "vi": {
     "loading": "Đang tải",
@@ -139,6 +147,8 @@
     "user_data_not_found": "Không tìm thấy dữ liệu người dùng.",
     "failed_to_fetch_user_data": "Không thể tải dữ liệu người dùng.",
     "failed_to_load_user_data": "Không thể tải dữ liệu người dùng.",
+    "client_offline_error": "Không thể tải dữ liệu: Máy khách đang ngoại tuyến hoặc Firestore không khả dụng.",
+    "permission_denied_error": "Không thể tải dữ liệu: Quyền bị từ chối. Kiểm tra quy tắc Firestore.",
     "failed_to_extract_features": "Không thể trích xuất đặc trưng khuôn mặt từ hình ảnh.",
     "failed_to_register_face": "Đăng ký khuôn mặt thất bại. Vui lòng thử lại.",
     "could_not_detect_face": "Không thể phát hiện khuôn mặt hoặc trích xuất đặc trưng. Vui lòng thử lại với hình ảnh rõ nét hơn.",
@@ -162,6 +172,9 @@
     "camera_stream_not_available": "Luồng camera không khả dụng.",
     "no_video_data_recorded": "Không có dữ liệu video nào được ghi lại.",
     "processing": "Đang xử lý",
+    "extracting_facial_features": "Đang trích xuất đặc trưng khuôn mặt...",
+    "uploading_image": "Đang tải ảnh lên...",
+    "saving_registration_data": "Đang lưu dữ liệu đăng ký...",
     "analyzing_video_for_liveness": "Đang phân tích video để kiểm tra liveness...",
     "liveness_check_successful": "Kiểm tra liveness thành công!",
     "failed": "Thất bại",
@@ -187,6 +200,9 @@
     "logged_out": "Đã đăng xuất",
     "logged_out_successfully": "Bạn đã đăng xuất thành công.",
     "logout_failed": "Đăng xuất thất bại",
-    "failed_to_log_out": "Không thể đăng xuất. Vui lòng thử lại."
+    "failed_to_log_out": "Không thể đăng xuất. Vui lòng thử lại.",
+    "loading_user_data": "Đang tải dữ liệu người dùng",
+    "offline_title": "Bạn đang Ngoại tuyến",
+    "offline_message": "Vui lòng kiểm tra kết nối mạng và thử lại. Một số tính năng có thể không khả dụng."
   }
 }
