@@ -59,14 +59,20 @@ export default function Dashboard() {
           console.error(`Error fetching user data for UID: ${user.uid}:`, error);
           console.error(`Error Code: ${error.code}, Message: ${error.message}`);
           let description = t('failed_to_fetch_user_data');
+          let isCurrentlyOffline = false; // Local variable for this catch block
+
            // Check for common errors like offline or permission denied
            if (error.code === 'unavailable') {
                 description = t('client_offline_error'); // Specific offline message
                 setIsOffline(true); // Set offline state
+                isCurrentlyOffline = true;
            } else if (error.code === 'permission-denied') {
                description = t('permission_denied_error'); // Specific permission message
            }
-          toast({ variant: "destructive", title: t('error'), description });
+          // Only show toast for non-offline errors, as offline state has its own UI
+          if (!isCurrentlyOffline) {
+              toast({ variant: "destructive", title: t('error'), description });
+          }
         } finally {
           setLoading(false);
         }
