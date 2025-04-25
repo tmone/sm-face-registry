@@ -16,14 +16,16 @@ const requiredEnvVars = [
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
-if (missingEnvVars.length > 0 && typeof window !== 'undefined') {
-  // Only throw error on client-side where these are expected
-  console.error(
+// Check if running on the client side before logging potentially missing variables
+// This prevents server-side logs during build/SSR if env vars are only meant for client
+if (typeof window !== 'undefined' && missingEnvVars.length > 0) {
+  console.warn(
     `Missing Firebase environment variables: ${missingEnvVars.join(', ')}. ` +
-    `Please ensure they are set in your .env.local file and prefixed with NEXT_PUBLIC_.`
+    `Please ensure they are set in your .env.local file and prefixed with NEXT_PUBLIC_. ` +
+    `Check the example in .env.local.`
   );
-  // Optionally, throw an error to halt execution if Firebase is critical
-  // throw new Error(`Missing Firebase environment variables: ${missingEnvVars.join(', ')}`);
+  // It's generally better to warn than throw an error here,
+  // allowing the app to load and potentially show a more user-friendly message.
 }
 
 
@@ -38,8 +40,7 @@ const firebaseConfig: FirebaseOptions = {
 };
 
 // Initialize Firebase
-// IMPORTANT: Check your `.env.local` file and ensure all NEXT_PUBLIC_FIREBASE_ variables are correctly set.
-// Also, verify your Firestore Security Rules in the Firebase console to allow authenticated reads/writes.
+// IMPORTANT: Ensure your .env.local file has the correct Firebase config values.
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 const auth = getAuth(app);
@@ -50,21 +51,27 @@ if (typeof window !== 'undefined') {
     // Enable persistence only on the client-side
     try {
         // Prefer initializeFirestore for enabling persistence
+        // Note: Persistence might require Firestore to be enabled in your Firebase project.
         db = initializeFirestore(app, {
             localCache: { kind: 'persistent' }
         });
         console.log("Firestore persistence initialized.");
 
-        // Keep enableIndexedDbPersistence as a fallback or for specific scenarios if needed,
-        // but initializeFirestore should handle it. Check console logs for success/errors.
-        // enableIndexedDbPersistence(getFirestore(app)) // Already initialized with persistence above
+        // You can also use enableIndexedDbPersistence directly if preferred or if initializeFirestore causes issues.
+        // enableIndexedDbPersistence(getFirestore(app))
         //   .then(() => console.log("Firestore persistence enabled."))
         //   .catch((err) => {
-        //     console.warn("Firestore persistence enabling failed:", err.code, err.message);
+        //       if (err.code == 'failed-precondition') {
+        //         console.warn("Firestore persistence failed: Multiple tabs open? Only one tab can have persistence enabled.");
+        //       } else if (err.code == 'unimplemented') {
+        //         console.warn("Firestore persistence failed: Browser does not support IndexedDB.");
+        //       } else {
+        //         console.warn("Firestore persistence enabling failed:", err.code, err.message);
+        //       }
         //   });
 
-    } catch (error) {
-        console.error("Error initializing Firestore with persistence:", error);
+    } catch (error: any) {
+        console.error("Error initializing Firestore with persistence:", error.message);
         // Fallback to default Firestore instance if persistence fails
         db = getFirestore(app);
     }
