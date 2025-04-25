@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -40,24 +41,42 @@ export default function Dashboard() {
       if (user) {
         setLoading(true);
         try {
+          console.log(`Fetching data for user: ${user.uid}`);
           const userDocRef = doc(db, 'users', user.uid);
           const userDocSnap = await getDoc(userDocRef);
+          console.log(`Firestore document snapshot exists: ${userDocSnap.exists()}`);
           if (userDocSnap.exists()) {
             setUserData(userDocSnap.data() as UserData);
+            console.log("User data fetched successfully:", userDocSnap.data());
           } else {
+             console.warn(`User document not found for UID: ${user.uid}`);
              toast({ variant: "destructive", title: t('error'), description: t('user_data_not_found') });
           }
-        } catch (error) {
-          console.error("Error fetching user data:", error);
-          toast({ variant: "destructive", title: t('error'), description: t('failed_to_fetch_user_data') });
+        } catch (error: any) {
+          // Log detailed error including code and message
+          console.error(`Error fetching user data for UID: ${user.uid}:`, error);
+          console.error(`Error Code: ${error.code}, Message: ${error.message}`);
+          let description = t('failed_to_fetch_user_data');
+           // Check for common errors like offline or permission denied
+           if (error.code === 'unavailable') {
+                description = 'Failed to fetch data: Client is offline or Firestore is unavailable.';
+           } else if (error.code === 'permission-denied') {
+               description = 'Failed to fetch data: Permission denied. Check Firestore rules.';
+           }
+          toast({ variant: "destructive", title: t('error'), description });
         } finally {
           setLoading(false);
         }
+      } else {
+        // Handle case where user is null (e.g., logged out)
+        setLoading(false);
+        setUserData(null);
+        console.log("User is null, skipping data fetch.");
       }
     };
 
     fetchUserData();
-  }, [user, toast, t]);
+  }, [user, toast, t]); // Rerun effect when user, toast, or t changes
 
   const handleImageCapture = (imageSrc: string) => {
     setCapturedImage(imageSrc);
@@ -72,24 +91,30 @@ export default function Dashboard() {
      setLivenessCheckRequired(false);
      try {
         // 1. Extract facial features using Genkit Flow
+        toast({ title: "Processing", description: "Extracting facial features..." });
         const { facialFeatures } = await extractFacialFeatures({ photoDataUri: capturedImage });
 
         if (!facialFeatures || facialFeatures.length === 0) {
             throw new Error(t('failed_to_extract_features'));
         }
+        console.log("Facial features extracted:", facialFeatures.length);
 
         // 2. Upload image to Firebase Storage
+        toast({ title: "Processing", description: "Uploading image..." });
         const imageRef = ref(storage, `faceImages/${user.uid}.jpg`);
         await uploadString(imageRef, capturedImage.split(',')[1], 'base64', { contentType: 'image/jpeg' });
         const imageUrl = await getDownloadURL(imageRef);
+        console.log("Image uploaded:", imageUrl);
 
         // 3. Update Firestore document
+        toast({ title: "Processing", description: "Saving registration data..." });
         const userDocRef = doc(db, 'users', user.uid);
         await updateDoc(userDocRef, {
             faceRegistered: true,
             faceImageUrl: imageUrl,
             facialFeatures: facialFeatures, // Store the extracted features
         });
+        console.log("Firestore document updated.");
 
         // 4. Update local state
         setUserData(prev => prev ? { ...prev, faceRegistered: true, faceImageUrl: imageUrl } : null);
@@ -102,6 +127,9 @@ export default function Dashboard() {
          let errorMessage = t('failed_to_register_face');
          if (error.message === t('failed_to_extract_features')) {
              errorMessage = t('could_not_detect_face');
+         } else if (error.code) {
+            // Include Firebase error code if available
+            errorMessage += ` (Error: ${error.code})`;
          }
         toast({ variant: "destructive", title: t('error'), description: errorMessage });
         // Reset states if registration fails
@@ -120,14 +148,16 @@ export default function Dashboard() {
 
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2">Loading user data...</span></div>;
   }
 
-  if (!userData) {
-    return <div className="flex h-screen items-center justify-center text-destructive">{t('failed_to_load_user_data')}</div>;
+  if (!userData && !loading) { // Ensure loading is finished before showing error
+     // This might happen if the user doc doesn't exist or fetch failed
+    return <div className="flex h-screen items-center justify-center text-destructive p-4 text-center">{t('failed_to_load_user_data')} Check console for errors or ensure user document exists in Firestore.</div>;
   }
 
-  return (
+  // Only render the dashboard content if userData is available
+  return userData ? (
     <div className="container mx-auto p-4 md:p-8">
         <h1 className="mb-6 text-3xl font-bold text-center">{t('dashboard')}</h1>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -166,7 +196,7 @@ export default function Dashboard() {
                  {userData.faceRegistered ? t('face_already_registered_update') : t('register_your_face_for_identification')}
                </CardDescription>
             </CardHeader>
-            <CardContent className="flex flex-col items-center justify-center space-y-4">
+            <CardContent className="flex flex-col items-center justify-center space-y-4 min-h-[200px]"> {/* Added min-height */}
               {processing && (
                  <div className="flex flex-col items-center space-y-2">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -185,21 +215,26 @@ export default function Dashboard() {
               )}
               {!processing && !livenessCheckRequired && !showWebcam && (
                  <>
-                 {capturedImage && !userData.faceRegistered && (
+                 {/* Only show preview if an image was just captured but not yet processed/registered */}
+                 {capturedImage && !livenessCheckRequired && (
                       <div className="text-center">
                           <img src={capturedImage} alt={t('captured_face_preview')} className="mx-auto h-40 w-40 rounded-lg object-cover border mb-2" />
                           <p className="text-sm text-muted-foreground">{t('preview_image')}</p>
+                          {/* Button to proceed was removed, logic now goes directly to liveness check */}
                       </div>
                   )}
-                  <Button onClick={() => setShowWebcam(true)} disabled={processing || showWebcam || livenessCheckRequired}>
-                    {userData.faceRegistered ? t('update_face') : t('register_face')}
-                  </Button>
-                 </>
+                 {/* Show button only if not capturing, not doing liveness, and not processing */}
+                 {!capturedImage && !livenessCheckRequired && (
+                     <Button onClick={() => setShowWebcam(true)} disabled={processing || showWebcam || livenessCheckRequired}>
+                        {userData.faceRegistered ? t('update_face') : t('register_face')}
+                     </Button>
+                 )}
 
+                 </>
               )}
             </CardContent>
           </Card>
         </div>
     </div>
-  );
+  ) : null; // Return null if userData is null and not loading
 }
